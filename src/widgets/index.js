@@ -230,34 +230,45 @@ widgets.saveLocationsOnThemeReset = async function () {
 	}
 };
 
+async function findAndClearMissingWidgets(locations, available, draftWidgets) {
+	let saveDraftWidgets = draftWidgets;
+	for (const [template, tplLocations] of Object.entries(locations)) {
+		for (const location of tplLocations) {
+			const locationExists = available.find(
+				area => area.template === template && area.location === location
+			);
+
+			if (!locationExists) {
+				const widgetsAtLocation = await widgets.getArea(template, location);
+				saveDraftWidgets = saveDraftWidgets.concat(widgetsAtLocation);
+				await widgets.setArea({
+					template,
+					location,
+					widgets: [],
+				});
+			}
+		}
+	}
+	return saveDraftWidgets;
+}
+
 widgets.moveMissingAreasToDrafts = async function () {
 	const locationsObj = await db.get('widgets:draft:locations');
 	if (!locationsObj) {
 		return;
 	}
+
 	try {
 		const locations = JSON.parse(locationsObj);
 		const [available, draftWidgets] = await Promise.all([
 			widgets.getAvailableAreas(),
 			widgets.getArea('global', 'drafts'),
 		]);
-		let saveDraftWidgets = draftWidgets || [];
-		for (const [template, tplLocations] of Object.entries(locations)) {
-			for (const location of tplLocations) {
-				const locationExists = available.find(
-					area => area.template === template && area.location === location
-				);
-				if (!locationExists) {
-					const widgetsAtLocation = await widgets.getArea(template, location);
-					saveDraftWidgets = saveDraftWidgets.concat(widgetsAtLocation);
-					await widgets.setArea({
-						template,
-						location,
-						widgets: [],
-					});
-				}
-			}
-		}
+
+		const saveDraftWidgets = await findAndClearMissingWidgets(
+			locations, available, draftWidgets || []
+		);
+
 		await widgets.setArea({
 			template: 'global',
 			location: 'drafts',
